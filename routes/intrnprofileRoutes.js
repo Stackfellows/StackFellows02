@@ -12,6 +12,23 @@ router.get("/", async (req, res) => {
   }
 });
 
+// 🟡 GET: Ek specific profile fetch karein (YE MISSING THA)
+router.get("/:id", async (req, res) => {
+  try {
+    const profile = await IntrnProfile.findById(req.params.id);
+    if (!profile) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Profile not found" });
+    }
+    res.status(200).json(profile);
+  } catch (err) {
+    res
+      .status(500)
+      .json({ message: "Error fetching profile", error: err.message });
+  }
+});
+
 // 🔵 POST: Naya profile save karein
 router.post("/", async (req, res) => {
   try {
