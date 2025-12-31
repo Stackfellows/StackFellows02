@@ -16,6 +16,7 @@ const studentRoutes = require("./routes/studentRoutes");
 
 // ✅ Internship Routes ka naya import
 const intrnProfileRoutes = require("./routes/intrnprofileRoutes");
+const newsletterRoutes = require("./routes/newsRoutes");
 
 connectDB();
 
@@ -37,6 +38,8 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/images", imageRoutes);
 app.use("/api/students", studentRoutes);
 app.use("/api/reviews", reviewRoutes);
+
+app.use("/api/newsletter", newsletterRoutes);
 
 // ✅ Internship Profiles ka API endpoint
 app.use("/api/admin/internal-profiles", intrnProfileRoutes);
