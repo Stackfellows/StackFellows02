@@ -1,22 +1,14 @@
 const express = require("express");
 const router = express.Router();
 const Newsletter = require("../models/newsModel");
-const nodemailer = require("nodemailer");
+const SibApiV3Sdk = require("sib-api-v3-sdk");
 
-// --- Stabilized Transporter for Render ---
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false, // TLS ke liye false
-  auth: {
-    user: process.env.ADMIN_EMAIL,
-    pass: process.env.ADMIN_PASSWORD,
-  },
-  tls: {
-    rejectUnauthorized: false, // Render/Hosting issues se bachne ke liye
-  },
-  connectionTimeout: 20000, // 20 seconds tak wait karega
-});
+// --- Brevo API Setup ---
+const defaultClient = SibApiV3Sdk.ApiClient.instance;
+const apiKey = defaultClient.authentications["api-key"];
+apiKey.apiKey = process.env.BREVO_API_KEY;
+
+const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 
 // --- 1. SUBSCRIBE ROUTE ---
 router.post("/subscribe", async (req, res) => {
@@ -27,26 +19,25 @@ router.post("/subscribe", async (req, res) => {
     const newSubscriber = new Newsletter({ email });
     await newSubscriber.save();
 
-    const mailOptions = {
-      from: `"Stack Fellows" <${process.env.ADMIN_EMAIL}>`,
-      to: email,
+    const sendEmail = {
+      sender: { email: "stackfellows684@gmail.com", name: "Stack Fellows" },
+      to: [{ email: email }],
       subject: "Welcome to Stack Fellows Newsletter!",
-      html: `
+      htmlContent: `
         <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 12px;">
           <div style="text-align: center; margin-bottom: 25px;">
-            <img src="https://res.cloudinary.com/dpskpjjmy/image/upload/v1756652273/Stackfellows_jfukyj.jpg" alt="Stack Fellows" style="width: 100%; max-width: 600px; border-radius: 8px;">
+            <img src="https://res.cloudinary.com/dpskpjjmy/image/upload/v1756652273/Stackfellows_jfukyj.jpg" alt="Stack Fellows" style="width: 100%; border-radius: 8px;">
           </div>
           <h2 style="color: #6B46C1; text-align: center;">Welcome to the Club!</h2>
-          <p>Thank you for subscribing to <strong>Stack Fellows</strong>. We're excited to have you!</p>
+          <p>Thank you for subscribing to <strong>Stack Fellows</strong>. We're excited to have you with us!</p>
           <p style="text-align: center; font-size: 11px; color: #999; margin-top: 30px;">© 2025 Stack Fellows. All rights reserved.</p>
         </div>
       `,
     };
 
-    // Confirm email bhejte waqt error catch karein
-    transporter
-      .sendMail(mailOptions)
-      .catch((err) => console.error("Welcome Email Error:", err));
+    apiInstance
+      .sendTransacEmail(sendEmail)
+      .catch((e) => console.log("Brevo Error:", e));
 
     res
       .status(201)
@@ -64,53 +55,52 @@ router.post("/subscribe", async (req, res) => {
 router.post("/broadcast", async (req, res) => {
   try {
     const { subject, message } = req.body;
-
-    if (!subject || !message) {
+    if (!subject || !message)
       return res
         .status(400)
-        .json({ success: false, message: "Subject and message are required." });
-    }
+        .json({ success: false, message: "All fields are required." });
 
     const subscribers = await Newsletter.find({}, "email");
-    const emailList = subscribers.map((s) => s.email);
+    const emailList = subscribers.map((s) => ({ email: s.email }));
 
-    if (emailList.length === 0) {
+    if (emailList.length === 0)
       return res
         .status(404)
         .json({ success: false, message: "No subscribers found." });
-    }
 
-    const mailOptions = {
-      from: `"Stack Fellows" <${process.env.ADMIN_EMAIL}>`,
-      bcc: emailList,
+    const sendEmail = {
+      sender: { email: "stackfellows684@gmail.com", name: "Stack Fellows" },
+      to: emailList,
       subject: subject,
-      html: `
+      htmlContent: `
         <div style="font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: auto; padding: 20px; border: 1px solid #e1e1e1; border-radius: 12px;">
           <div style="text-align: center; margin-bottom: 25px;">
             <img src="https://res.cloudinary.com/dpskpjjmy/image/upload/v1756652273/Stackfellows_jfukyj.jpg" alt="Update" style="width: 100%; border-radius: 8px;">
           </div>
           <h2 style="color: #6B46C1; text-align: center;">New Update!</h2>
-          <p>${message}</p>
-          <div style="text-align: center; margin-top: 20px;">
-             <a href="https://stackfellows.com" style="color: #6B46C1; font-weight: bold;">Visit Our Website</a>
+          <p style="font-size: 16px; color: #333;">${message}</p>
+          <div style="text-align: center; margin-top: 25px;">
+             <a href="https://stackfellows.com" style="background: #6B46C1; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold;">Visit Our Website</a>
           </div>
+          <p style="text-align: center; font-size: 11px; color: #999; margin-top: 40px;">
+            Johar Town, Lahore, Pakistan <br>
+            © 2025 Stack Fellows. All rights reserved.
+          </p>
         </div>
       `,
     };
 
-    // Wait for email sending
-    await transporter.sendMail(mailOptions);
+    await apiInstance.sendTransacEmail(sendEmail);
 
-    return res.status(200).json({
+    res.status(200).json({
       success: true,
-      message: `Broadcast sent to ${emailList.length} subscribers.`,
+      message: `Broadcast delivered successfully to ${emailList.length} subscribers!`,
     });
   } catch (error) {
-    console.error("DETAILED BROADCAST ERROR:", error);
-    return res.status(500).json({
-      success: false,
-      message: error.message || "Connection Timeout. Please try again.",
-    });
+    console.error("DETAILED BREVO ERROR:", error);
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to send via Brevo API." });
   }
 });
 
