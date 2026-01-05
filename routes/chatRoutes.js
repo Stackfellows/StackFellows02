@@ -1,111 +1,90 @@
 const express = require("express");
-const { GoogleGenerativeAI } = require("@google/generative-ai"); // Google Gemini library import kiya
+const router = require("express").Router();
+const Groq = require("groq-sdk");
+const Chat = require("../models/Chat");
 
-const router = express.Router();
+const groq = new Groq({
+  apiKey: process.env.GROK_API_KEY,
+});
 
-// Initialize the Generative AI client with your new API key
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+router.post("/ask", async (req, res) => {
+  const { message, chatId } = req.body;
 
-// Local knowledge base for Stack Fellows info (wahi rahega)
-const stackFellowsKB = {
-  about: `Stack Fellows ek passionate team hai developers aur digital marketing experts ki jo businesses ko digital duniya mein aage badhne mein madad karte hain. Hum technical expertise ko creative vision ke saath jod kar aise solutions dete hain jo na sirf behtareen dikhte hain, balki result-driven bhi hain.`,
-  services: `Hum nimnlikhit services provide karte hain:
-- Web Development: Custom websites aur web applications modern technologies ke saath.
-- Mobile App Development: iOS aur Android ke liye native aur cross-platform apps.
-- Digital Marketing: Online presence badhane ke liye comprehensive strategies.
-- Analytics & Insights: Data-driven insights se performance ko optimize karte hain.
-- UI/UX Design: Behtareen user-centered designs.
-- E-commerce Solutions: Payment integration aur inventory management ke saath complete platforms.`,
-  team: `Hamari team mein ye experts hain:
-- M Asad Ullah: Project Manager & Developer.
-- Zeeshan Haider: Full Stack Developer.
-- Khansha Rana: Frontend Developer.
-- Soma Khalil: Digital Marketing Expert.
-- Rameen Meer: Full Stack Developer.
-- Aman Fatima: Full Stack Developer.`,
-  technologies: `Hum in technologies ka upyog karte hain:
-- Frontend: React.js, Bootstrap, Tailwind CSS, daisyui, HTML, CSS, Framer Motion.
-- Backend: Node.js, Express.js, Postman, Thunder Client, Npm.
-- Database: MongoDB.
-- Tools & Platforms: Git, GitHub, Figma, Vercel, Render, Netlify.`,
-  contact: `Aap humse in methods se contact kar sakte hain:
-- Email: stackfellows684@gmail.com
-- Phone: +92 309 1499394
-- Address: Johar Town, Lahore
-Hum 24/7 support provide karte hain.`,
-};
-
-// Function to check if user's message matches local KB keywords (wahi rahega)
-const getLocalResponse = (message) => {
-  const lowerCaseMessage = message.toLowerCase();
-  if (
-    lowerCaseMessage.includes("about") ||
-    lowerCaseMessage.includes("hum kaun hain")
-  ) {
-    return stackFellowsKB.about;
-  }
-  if (
-    lowerCaseMessage.includes("services") ||
-    lowerCaseMessage.includes("kya karte hain")
-  ) {
-    return stackFellowsKB.services;
-  }
-  if (
-    lowerCaseMessage.includes("team") ||
-    lowerCaseMessage.includes("members") ||
-    lowerCaseMessage.includes("employees")
-  ) {
-    return stackFellowsKB.team;
-  }
-  if (
-    lowerCaseMessage.includes("technologies") ||
-    lowerCaseMessage.includes("tech stack")
-  ) {
-    return stackFellowsKB.technologies;
-  }
-  if (
-    lowerCaseMessage.includes("contact") ||
-    lowerCaseMessage.includes("support") ||
-    lowerCaseMessage.includes("address") ||
-    lowerCaseMessage.includes("email") ||
-    lowerCaseMessage.includes("phone")
-  ) {
-    return stackFellowsKB.contact;
-  }
-  return null;
-};
-
-// API route for chatbot interaction
-router.post("/", async (req, res) => {
   try {
-    const { history, message } = req.body;
+    let chat;
+    let history = [];
 
-    if (!message) {
-      return res.status(400).json({ msg: "Message is required" });
+    if (chatId && chatId !== "null") {
+      chat = await Chat.findById(chatId);
+      if (chat) {
+        history = chat.messages.map((m) => ({
+          role: m.role === "model" ? "assistant" : "user",
+          content: m.parts[0].text,
+        }));
+      }
     }
 
-    // Check for local response first
-    const localResponse = getLocalResponse(message);
-    if (localResponse) {
-      return res.json({ text: localResponse });
+    if (!chat) {
+      chat = new Chat({ messages: [] });
     }
 
-    // Ab Gemini API call
-    const chat = model.startChat({
-      history: history,
+    // --- ENHANCED KNOWLEDGE BASE WITH COMMON TECH FAQs ---
+    const systemPrompt = `
+    You are the "Stack Fellows AI Concierge". Communicate EXCLUSIVELY in Professional English.
+
+    CORE IDENTITY:
+    - Stack Fellows is a premium Digital Agency & Academy in Johar Town, Lahore.
+    - Tagline: "Fellows Stack It, Grow It."
+
+    COMMON TECH & BUSINESS FAQs (Use these for answers):
+    1. PROJECT TIMELINE: Small projects take 2-4 weeks. Enterprise solutions take 3-6 months.
+    2. TECH STACK: We specialize in MERN (MongoDB, Express, React, Node.js), Next.js, TypeScript, and Python for AI integration.
+    3. PRICING: We offer custom quotes based on project complexity. We focus on ROI-driven development.
+    4. ACADEMY JOB GUARANTEE: We don't just teach; we provide career support, resume building, and direct referrals to top firms.
+    5. INTERNSHIP CERTIFICATION: Yes, all interns receive a verifiable digital certificate upon successful completion.
+    6. WHY US?: We use an "Architecture First" approach, ensuring 99.9% code quality and SEO optimization from Day 1.
+
+    LEADERSHIP:
+    - CEO: Zeeshan Haider.
+    - Co-Founder: Muhammad Asad Ullah.
+    - MD: Farukh Amir | HR: Tania Kumari.
+    - Marketing: Ayesha Batool & Usman Haider.
+
+    STRICT GUIDELINES:
+    - Do not mention pricing figures; ask the user to "Consult our Experts" for a custom quote.
+    - If asked about a service not listed (like Graphic Design), mention that we focus on "Engineering Growth through Code" but can discuss custom digital strategies.
+    - Always stay professional and never use Urdu/Roman Urdu.
+    `;
+
+    const response = await groq.chat.completions.create({
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...history,
+        { role: "user", content: message },
+      ],
+      model: "llama-3.1-8b-instant",
+      temperature: 0.3,
+      max_tokens: 800,
     });
 
-    const result = await chat.sendMessage(message);
-    const response = result.response;
-    const text = response.text();
+    const botResponse = response.choices[0].message.content;
 
-    res.json({ text });
-  } catch (err) {
-    console.error("Gemini API Error:", err);
-    res
-      .status(500)
-      .json({ msg: "Error from chatbot. Please try again later." });
+    chat.messages.push({ role: "user", parts: [{ text: message }] });
+    chat.messages.push({ role: "model", parts: [{ text: botResponse }] });
+    await chat.save();
+
+    res.status(200).json({
+      success: true,
+      reply: botResponse,
+      chatId: chat._id,
+    });
+  } catch (error) {
+    console.error("Stack Fellows Bot Error:", error.message);
+    res.status(500).json({
+      success: false,
+      message:
+        "The assistant is currently unavailable. Please try again later.",
+    });
   }
 });
 
